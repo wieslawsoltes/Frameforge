@@ -1,0 +1,81 @@
+name: Deploy GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      ready: ${{ steps.source.outputs.ready }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Check source availability
+        id: source
+        shell: bash
+        run: |
+          if [[ -f src/app.js && -f src/media.js && -f index.html && -f assets/weightless.wav ]]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Full application source has not been imported. Deployment is skipped."
+            echo "Application source import is incomplete. No site was deployed." >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Setup Node.js
+        if: steps.source.outputs.ready == 'true'
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          package-manager-cache: false
+      - name: Validate edit kernel
+        if: steps.source.outputs.ready == 'true'
+        run: npm test
+      - name: Build standalone distribution
+        if: steps.source.outputs.ready == 'true'
+        run: npm run build
+      - name: Assemble public site
+        if: steps.source.outputs.ready == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p _site/assets _site/tests
+          cp index.html styles.css Frameforge.html LICENSE THIRD_PARTY_NOTICES.md _site/
+          cp -R src _site/src
+          find assets -maxdepth 1 -type f \( -name '*.jpg' -o -name '*.mp4' -o -name '*.wav' -o -name '*.svg' -o -name '*.json' \) -exec cp '{}' _site/assets/ \;
+          cp tests/gpu-smoke.html _site/tests/
+          touch _site/.nojekyll
+          printf '{"commit":"%s","run":"%s"}\n' "$GITHUB_SHA" "$GITHUB_RUN_ID" > _site/build-info.json
+      - name: Upload Pages artifact
+        if: steps.source.outputs.ready == 'true'
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: _site
+
+  deploy:
+    if: needs.build.outputs.ready == 'true'
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy Pages artifact
+        id: deployment
+        uses: actions/deploy-pages@v4
