@@ -1,0 +1,95 @@
+    document.addEventListener('keydown',e=>this.keydown(e));
+    document.addEventListener('visibilitychange',()=>{if(document.hidden){if(this.exporter.running){this.exporter.cancel();this.toast('Export was cancelled because the tab became hidden. Keep it visible during real-time recording.');}else this.pause();}});
+    window.addEventListener('beforeunload',e=>{if(this.exporter.running||this.savePending||this.sessionUnsaved){e.preventDefault();e.returnValue='';}});
+    const divider=$('timelineDivider');let sizing=null;
+    divider.addEventListener('pointerdown',e=>{sizing={y:e.clientY,h:$('timelineRegion').getBoundingClientRect().height};divider.setPointerCapture(e.pointerId);});
+    divider.addEventListener('pointermove',e=>{if(sizing)document.documentElement.style.setProperty('--timeline-height',clamp(sizing.h+sizing.y-e.clientY,220,innerHeight*.6)+'px');});
+    divider.addEventListener('pointerup',()=>{sizing=null;});
+    $('canvasHost').addEventListener('dblclick',()=>this.action('fullscreen'));
+    // OS file drops are accepted anywhere except the timeline, which has positional import.
+    document.addEventListener('dragover',e=>{if(e.dataTransfer.types.includes('Files'))e.preventDefault();});
+    document.addEventListener('drop',e=>{if(e.target.closest('#timelineScroll'))return;e.preventDefault();if(e.dataTransfer.files.length)this.importFiles(e.dataTransfer.files);});
+  }
+  fitViewer(){const body=document.querySelector('.viewer-body');const p=this.editor.project;const width=Math.min(body.clientWidth-30,(body.clientHeight-47)*p.width/p.height);$('canvasHost').style.width=Math.max(100,width)+'px';$('canvasHost').style.aspectRatio=`${p.width}/${p.height}`;}
+  selectedClip(){return this.editor.project.clips.find(c=>this.selection.has(c.id));}
+  select(id,add=false){if(!id)return;if(add){if(this.selection.has(id))this.selection.delete(id);else this.selection.add(id);}else this.selection=new Set([id]);this.sourceMode=false;const c=this.selectedClip();if(c?.lane==='title')this.inspectorTab='text';else if(c?.lane==='audio')this.inspectorTab='audio';else if(this.inspectorTab==='text'||this.inspectorTab==='audio')this.inspectorTab='video';this.dirty=true;this.timeline.draw();this.renderInspector();this.updateLabels();}
+  selectAsset(id){this.pause();this.selectedAsset=id;this.sourceFrame=0;this.sourceMode=true;this.renderBrowser();this.updateLabels();this.dirty=true;}
+  sourceClip(){const a=this.editor.project.assets.find(a=>a.id===this.selectedAsset);if(!a)return null;const key=a.id+'|'+a.duration+'|'+this.editor.project.fps;if(this.sourceCache?.key!==key)this.sourceCache={key,clip:{...makeClip(a,a.kind==='audio'?'audio':'primary',0,this.editor.project.fps),id:'source-'+a.id,duration:Math.max(1,Math.round(a.duration*this.editor.project.fps)),gainDb:0}};return this.sourceCache.clip;}
+  activePlan(){if(this.sourceMode){const clip=this.sourceClip();return clip?{layers:clip.lane==='audio'?[]:[{clip,frame:this.sourceFrame,opacity:1}],audio:[clip]}:{layers:[],audio:[]};}return renderPlan(this.editor.project,this.frame);}
+  clock(){return this.media.audio?.state==='running'?this.media.audio.currentTime:performance.now()/1000;}
+  async play(rate=1,force=false){
+    if(this.playing&&!force&&rate===this.rate){this.pause();return;}
+    await this.media.ensureAudio();
+    const max=this.sourceMode?(this.sourceClip()?.duration||1):duration(this.editor.project);
+    let frame=this.sourceMode?this.sourceFrame:this.frame;
+    if(rate>0&&frame>=max-1)frame=0;if(rate<0&&frame<=0)frame=max-1;
+    if(this.sourceMode)this.sourceFrame=frame;else this.frame=frame;
+    this.baseFrame=frame;this.baseClock=this.clock();this.rate=rate;this.playing=true;this.dirty=true;this.updatePlayButton();
+  }
+  pause(){this.playing=false;this.media?.pauseAll();this.updatePlayButton();}
+  updatePlayButton(){if(!$('playButton'))return;$('playButton').innerHTML=icon(this.playing?'pause':'play',19);$('playButton').classList.toggle('playing',this.playing);$('playButton').setAttribute('aria-label',this.playing?'Pause':'Play');}
+  seek(frame){this.pause();this.sourceMode=false;this.frame=clamp(Math.round(frame),0,duration(this.editor.project)-1);this.dirty=true;this.timeline?.updateHead();this.updateLabels();}
+  tick(now){
+    let ended=false;
+    if(this.playing){const max=this.sourceMode?(this.sourceClip()?.duration||1):duration(this.editor.project);const next=Math.floor(this.baseFrame+(this.clock()-this.baseClock)*this.editor.project.fps*this.rate);const frame=clamp(next,0,max-1);if(this.sourceMode){if(frame!==this.sourceFrame)this.dirty=true;this.sourceFrame=frame;}else{if(frame!==this.frame)this.dirty=true;this.frame=frame;}if(next>=max||next<0)ended=true;}
+    if(this.dirty){this.render();this.updateLabels();this.timeline.updateHead(this.playing&&!this.sourceMode);this.dirty=false;}
+    if(this.exporter.running)this.exporter.capture();
+    if(ended){this.pause();if(this.exporter.running)this.exporter.finish();}
+    const level=this.playing?this.media.meter():0;document.querySelectorAll('.audio-meter span').forEach((s,i)=>s.style.height=(2+clamp(level*70*(i?.92:1),0,17))+'px');
+    if(!this.lastStats||now-this.lastStats>900){$('renderStats').textContent=`${this.renderer.lastMs.toFixed(2)} ms submit · ${this.activePlan().layers.length} layers`;this.lastStats=now;}
+    requestAnimationFrame(t=>this.tick(t));
+  }
+  render(){
+    const plan=this.activePlan(),frame=this.sourceMode?this.sourceFrame:this.frame;
+    this.renderer.projectWidth=this.editor.project.width;this.renderer.projectHeight=this.editor.project.height;
+    this.media.sync(plan,this.editor.project,frame,this.playing,this.rate);this.renderer.render(plan.layers,this.media);
+    const missing=plan.layers.some(l=>this.media.missing.has(l.clip.assetId));$('missingOverlay').hidden=!missing;
+  }
+  updateLabels(){
+    const p=this.editor.project,frames=duration(p);if(this.labelProjectName!==p.name){$('projectTitle').innerHTML=esc(p.name)+icon('down',12);this.labelProjectName=p.name;}$('projectFormat').textContent=`${p.width} × ${p.height}`;$('projectFps').textContent=p.fps+' fps';
+    $('libraryProjectName').textContent=p.name.split(' — ')[0];$('libraryDuration').textContent=timecode(frames,p.fps);$('timelineName').textContent=p.name.split(' — ')[0];$('timelineLength').textContent=timecode(frames,p.fps);
+    const a=p.assets.find(a=>a.id===this.selectedAsset);$('viewerName').textContent=this.sourceMode?(a?.name||'Source'):p.name.split(' — ')[0];$('viewerMode').textContent=this.sourceMode?'SOURCE VIEWER':'PROJECT VIEWER';$('sourceModeButton').textContent=this.sourceMode?'Source':'Project';$('sourceModeButton').style.color=this.sourceMode?'#c1a6ee':'';
+    $('timecode').textContent=timecode(this.sourceMode?this.sourceFrame:this.frame,p.fps);
+    $('selectionStatus').textContent=this.selection.size?`${this.selection.size} clip${this.selection.size>1?'s':''} selected`:`${p.clips.length} clips · ${(frames/p.fps).toFixed(1)} seconds`;
+    $('timelineStatus').textContent=this.timeline?.magnetic?'Magnetic storyline':'Position · lift to connected';
+    $('undo').disabled=this.editor.undoStack.length===0;$('redo').disabled=this.editor.redoStack.length===0;
+    $('allCount').textContent=p.assets.length;$('importCount').textContent=p.assets.filter(a=>!a.path).length;
+    if(a){$('sourceName').textContent=a.name;$('sourceScrub').max=Math.max(0,Math.round(a.duration*p.fps)-1);$('sourceScrub').value=this.sourceFrame;const r=this.ranges.get(a.id);$('rangeLabel').textContent=r?`${timecode(r.in,p.fps).slice(3)} → ${timecode(r.out,p.fps).slice(3)}`:'Full source';}else{$('sourceName').textContent='Select media to preview';}
+    this.fitViewer();
+  }
+  updateAll(){this.renderBrowser();this.renderInspector();this.renderIndex();this.updateLabels();this.timeline.draw();this.dirty=true;}
+  scheduleSave(){
+    if(!this.storage.db){$('saveState').textContent='Session only';this.savePending=false;this.sessionUnsaved=true;return;}
+    $('saveState').textContent='Saving…';this.savePending=true;clearTimeout(this.saveTimer);
+    this.saveTimer=setTimeout(async()=>{try{await this.storage.saveProject(this.editor.project);$('saveState').textContent='Saved on this device';this.savePending=false;}catch(e){$('saveState').textContent='Save needed';this.toast('Autosave failed: '+e.message+' Use File → Save portable project.');}},500);
+  }
+  toast(message){clearTimeout(this.toastTimer);$('toast').textContent=message;$('toast').classList.add('visible');this.toastTimer=setTimeout(()=>$('toast').classList.remove('visible'),4800);}
+  rangeFor(id){return this.ranges.get(id)||null;}
+  renderBrowser(){
+    const p=this.editor.project,grid=$('mediaGrid');grid.replaceChildren();
+    document.querySelectorAll('[data-browser]').forEach(b=>b.classList.toggle('selected',b.dataset.browser===this.browserTab));document.querySelectorAll('[data-collection]').forEach(b=>b.classList.toggle('selected',b.dataset.collection===this.collection&&!b.classList.contains('library-root')));
+    const labels={all:'All media',imported:'Imported media',favorites:'Favorites',video:'Video',audio:'Audio',image:'Stills'};
+    $('collectionName').textContent=this.browserTab==='titles'?'Titles & generators':this.browserTab==='audio'?'Audio':labels[this.collection];
+    if(this.browserTab==='titles'){
+      $('mediaGroup').innerHTML='TITLES <span>3 styles</span>';
+      for(const [style,name,preview]of [['cinematic','Cinematic title','BEYOND'],['basic','Basic title','Your story'],['lower','Lower third','A new perspective']]){
+        const card=document.createElement('div');card.className='media-card';card.draggable=true;card.tabIndex=0;card.innerHTML=`<div class="media-thumb"><div class="title-thumbnail" style="font-size:${style==='lower'?9:15}px;letter-spacing:${style==='lower'?0:3}px">${preview}</div></div><div class="media-name">${name}</div><div class="media-meta">Editable · Connected title</div>`;
+        card.ondblclick=()=>this.select(this.editor.addTitle(this.frame,style,style==='cinematic'?'YOUR STORY':'Your title'));
+        card.onclick=()=>{grid.querySelectorAll('.media-card').forEach(c=>c.classList.remove('selected'));card.classList.add('selected');};
+        card.onkeydown=e=>{if(e.key==='Enter')card.ondblclick();};card.ondragstart=e=>e.dataTransfer.setData('application/x-frameforge-title',style);grid.append(card);
+      }return;
+    }
+    const query=$('mediaSearch').value.toLocaleLowerCase();
+    const assets=p.assets.filter(a=>a.name.toLocaleLowerCase().includes(query)&&(this.browserTab!=='audio'||a.kind==='audio')&&(this.collection==='all'||this.collection==='favorites'&&a.favorite||this.collection==='imported'&&!a.path||a.kind===this.collection));
+    $('mediaGroup').innerHTML=`${this.collection==='all'?'MEDIA COLLECTION':esc(labels[this.collection]).toUpperCase()} <span>${assets.length} items</span>`;
+    for(const a of assets){
+      const card=document.createElement('div');card.className='media-card'+(this.selectedAsset===a.id?' selected':'');card.draggable=true;card.tabIndex=0;card.dataset.assetId=a.id;
+      const thumb=thumbURL(a);const durationText=timecode(Math.round(a.duration*p.fps),p.fps).slice(3);
+      card.innerHTML=`<div class="media-thumb">${a.kind==='audio'?'<div class="audio-thumbnail">'+icon('audio',40)+'</div>':''}<span class="thumb-kind">${icon(a.kind==='audio'?'music':a.kind==='image'?'grid':'film',11)}</span><span class="thumb-duration">${durationText}</span>${a.favorite?'<span class="favorite-dot">★</span>':''}</div><div class="media-name"></div><div class="media-meta"></div>`;
+      if(thumb)card.querySelector('.media-thumb').style.backgroundImage=`url("${thumb}")`;
+      card.querySelector('.media-name').textContent=a.name;
+      card.querySelector('.media-meta').textContent=this.media.missing.has(a.id)?'OFFLINE · Relink media':a.kind==='audio'?`${a.sampleRate? a.sampleRate/1000+' kHz · ':''}Stereo audio`:a.kind==='image'?`${a.width} × ${a.height} · Still`:`${a.width} × ${a.height} · ${a.synthetic?'Rendered camera move':'Video'}`;
+      card.title=`${a.name}\n${durationText} · ${a.synthetic?'Original 3D Earth render, not live footage':a.kind}\nDouble-click to append to the edit`;
+      card.onclick=()=>this.selectAsset(a.id);card.ondblclick=()=>this.addMedia('append',a.id);
+      card.onkeydown=e=>{if(e.key==='Enter')this.addMedia('append',a.id);};card.ondragstart=e=>{e.dataTransfer.setData('application/x-frameforge-media',a.id);e.dataTransfer.effectAllowed='copy';};grid.append(card);
+    }

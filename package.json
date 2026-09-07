@@ -1,0 +1,15 @@
+{
+  "name": "frameforge",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "A framework-free, local-first nonlinear video editor with a WebGPU compositor.",
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test tests/core.test.mjs",
+    "build": "node build.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

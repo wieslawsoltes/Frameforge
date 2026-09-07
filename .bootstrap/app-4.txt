@@ -1,0 +1,80 @@
+      button.onclick=e=>{e.stopPropagation();popup.hidden=true;this.action(action).catch(err=>this.toast(err.message));};popup.append(button);
+    }
+    popup.hidden=false;popup.style.left=Math.min(x,innerWidth-popup.offsetWidth-8)+'px';popup.style.top=Math.min(y,innerHeight-popup.offsetHeight-8)+'px';
+  }
+  openMenu(name,x,y){const menus={
+    file:[['New project…','new','⌘N'],['Open project…','open','⌘O'],null,['Import media…','import','⌘I'],['Import captions…','import-srt',''],['Relink media…','relink',''],null,['Save portable project','save','⌘S'],['Save reference project','save-reference','⇧⌘S'],null,['Export video…','export',''],['Export current frame','snapshot',''],['Export captions (SRT)','export-srt',''],['Export cut list (EDL)','export-edl','']],
+    edit:[['Undo','undo','⌘Z'],['Redo','redo','⇧⌘Z'],null,['Duplicate selected','duplicate','⌘D'],['Enable / disable','enable','V'],['Detach connection','detach',''],['Delete selected','delete','⌫'],null,['Select all clips','select-all','⌘A']],
+    trim:[['Blade at playhead','split','⌘B'],['Trim start to playhead','trim-start',''],['Trim end to playhead','trim-end',''],null,['Append media','append','E'],['Insert media','insert','W'],['Connect media','connect','Q'],null,['Mark source in','range-in','I'],['Mark source out','range-out','O'],['Clear source range','range-clear',''],null,['Add dissolve','dissolve','']],
+    view:[['Show / hide browser','browser',''],['Show / hide inspector','inspector',''],['Effects browser','effects',''],['Timeline index','index',''],null,['Fit timeline','fit','⇧Z'],['Safe-area guides','guides',''],['Fullscreen viewer','fullscreen',''],['Reset workspace','reset-layout','']],
+    help:[['Keyboard shortcuts','shortcuts','?'],['About Frameforge','about',''],['Engine & limitations','engine-info','']]
+  };this.showMenu(menus[name]||[],x,y);}
+  dialog(title,body,buttons,eyebrow='FRAMEFORGE'){
+    $('dialogTitle').textContent=title;$('dialogEyebrow').textContent=eyebrow;$('dialogBody').innerHTML=body;$('dialogActions').replaceChildren();
+    for(const {label,primary,action} of buttons){const button=document.createElement('button');button.type='button';button.className=primary?'primary':'';button.textContent=label;button.onclick=async()=>{try{await action();}catch(e){this.toast(e.message);}};$('dialogActions').append(button);}
+    if(!$('dialog').open)$('dialog').showModal();
+  }
+  shortcuts(){this.dialog('Stay in the flow.',`<p class="dialog-copy">The essentials, right at your fingertips. Use Ctrl in place of ⌘ on Windows and Linux.</p><div class="shortcut-grid">${SHORTCUTS.map(([label,key])=>`<div class="shortcut-row"><span>${label}</span><kbd>${key}</kbd></div>`).join('')}</div>`,[{label:'Back to the edit',primary:true,action:()=>$('dialog').close()}],'KEYBOARD SHORTCUTS');}
+  settings(isNew=false){
+    const p=this.editor.project;
+    this.dialog(isNew?'A new story.':'Project settings',`<p class="dialog-copy">${isNew?'Create a clean timeline. The current workspace will be replaced; save a portable project first to keep a separate copy.':'The timeline uses integer, non-drop frames. Frame rate is locked once clips have been added.'}</p><div class="dialog-field"><label for="settingName">Project name</label><input id="settingName" value="${isNew?'Untitled project':esc(p.name)}" maxlength="150"></div><div class="dialog-field"><label for="settingSize">Frame size</label><select id="settingSize"><option value="1920,1080">1920 × 1080 · Landscape</option><option value="1080,1920">1080 × 1920 · Vertical</option><option value="1080,1080">1080 × 1080 · Square</option><option value="3840,2160">3840 × 2160 · UHD</option></select></div><div class="dialog-field"><label for="settingFps">Frame rate</label><select id="settingFps" ${!isNew&&p.clips.length?'disabled':''}>${[24,25,30,60].map(n=>`<option value="${n}" ${n===p.fps?'selected':''}>${n} fps</option>`).join('')}</select></div>`,[{label:'Cancel',action:()=>$('dialog').close()},{label:isNew?'Create project':'Apply settings',primary:true,action:async()=>{const name=$('settingName').value.trim()||'Untitled project';const [width,height]=$('settingSize').value.split(',').map(Number);const fps=+$('settingFps').value;if(isNew){await this.loadProject({format:'frameforge-project',version:1,name,width,height,fps,assets:[],clips:[],markers:[]});}else this.editor.transact('Project settings',p=>Object.assign(p,{name,width,height,fps}));this.renderer.resize(1280,Math.round(1280*height/width));this.fitViewer();$('dialog').close();}}]);
+    if(!isNew)$('settingSize').value=`${p.width},${p.height}`;
+    $('settingName').focus();$('settingName').select();
+  }
+  exportDialog(){
+    this.pause();this.sourceMode=false;const p=this.editor.project,formats=supportedFormats();
+    if(!formats.length){this.toast('No supported MediaRecorder video encoder is available in this browser. Frame and project export remain available.');return;}
+    this.dialog('Ready for the big screen.',`<div class="export-preview"><strong>${esc(p.name.split(' — ')[0]).toUpperCase()}</strong><span>${timecode(duration(p),p.fps)} &nbsp; / &nbsp; ${p.fps} FPS &nbsp; / &nbsp; ${p.width} × ${p.height}</span></div><div class="dialog-field"><label for="exportFormat">Format</label><select id="exportFormat">${formats.map(f=>`<option value="${f.mime}">${f.name}</option>`).join('')}</select></div><div class="dialog-field"><label for="exportSize">Resolution</label><select id="exportSize">${[1920,1280,640].map(w=>`<option value="${w}">${w} × ${Math.round(w*p.height/p.width)}${w===1280?' · Recommended':''}</option>`).join('')}</select></div><div class="dialog-field"><label for="exportBitrate">Video bitrate</label><select id="exportBitrate"><option value="12000000">12 Mbps · High quality</option><option value="6000000">6 Mbps · Balanced</option><option value="24000000">24 Mbps · Maximum</option></select></div><div class="export-note">Real-time browser recording, including the composited picture, titles, transitions, and mixed audio. Keep this tab visible until completion. Export takes approximately the duration of your film; it is not an offline, frame-guaranteed mastering encoder.</div>`,[{label:'Cancel',action:()=>$('dialog').close()},{label:'Export film',primary:true,action:async()=>{
+      const width=+$('exportSize').value,height=Math.round(width*p.height/p.width),mime=$('exportFormat').value,bitrate=+$('exportBitrate').value;
+      this.dialog('Your story is rendering.',`<div class="export-preview"><strong>${esc(p.name.split(' — ')[0]).toUpperCase()}</strong><span>${width} × ${height} &nbsp; / &nbsp; ${p.fps} FPS</span></div><div class="export-progress"><span id="exportProgressFill"></span></div><div class="progress-caption"><span id="exportProgressText">Preparing media…</span><span id="exportElapsed">0 s</span></div><div class="export-note">Keep this tab visible. The resulting file will be saved when recording completes. Audio monitoring volume does not change the export mix.</div>`,[{label:'Cancel export',action:()=>this.exporter.cancel()}],'EXPORT IN PROGRESS');
+      document.body.classList.add('body-exporting');
+      try{const blob=await this.exporter.start({width,height,mime,bitrate},(progress,seconds)=>{if($('exportProgressFill'))$('exportProgressFill').style.width=progress*100+'%';if($('exportProgressText'))$('exportProgressText').textContent=Math.round(progress*100)+'% complete';if($('exportElapsed'))$('exportElapsed').textContent=seconds.toFixed(0)+' s';});$('dialog').close();this.toast(`Film exported · ${(blob.size/1024/1024).toFixed(1)} MB`);}
+      catch(e){$('dialog').close();this.toast(e.name==='AbortError'?'Export cancelled.':`Export failed: ${e.message}`);}
+      finally{document.body.classList.remove('body-exporting');}
+    }}],'SHARE YOUR STORY');$('exportSize').value='1280';
+  }
+  async loadProject(project){
+    validateProject(project);this.pause();this.sourceMode=false;this.frame=0;this.sourceFrame=0;this.ranges.clear();this.selection.clear();
+    for(const [id,e]of this.media.entries)this.media.release(id,e);
+    for(const url of this.media.urls.values())if(url.startsWith('blob:'))URL.revokeObjectURL(url);
+    this.media.urls.clear();this.media.blobs.clear();this.media.images.clear();this.media.peaks.clear();
+    this.editor.replace(project);await this.media.setProject(this.editor.project);this.selectedAsset=project.assets[0]?.id||null;
+    this.selection=new Set(project.clips.filter(c=>c.lane==='primary').slice(0,1).map(c=>c.id));
+    this.updateAll();this.timeline.fit();this.scheduleSave();
+    try{await this.media.prepare(renderPlan(project,0),project);}catch(e){this.toast(e.message);}this.dirty=true;
+  }
+  async importFiles(files,addToTimeline=false,frame=this.frame){
+    if(this.importing||this.exporter.running){this.toast('Wait for the current operation to finish.');return;}
+    this.importing=true;this.pause();const list=Array.from(files);let count=0,failures=[];
+    try{
+      for(const file of list){
+        this.toast(`Importing ${file.name}…`);
+        try{
+          if(file.size>2*1024**3)throw new Error('The per-file import limit is 2 GB.');
+          if(file.name.toLowerCase().endsWith('.srt')){this.importCaptions(await file.text());count++;continue;}
+          const a=await this.media.import(file);this.editor.addAsset(a);this.selectedAsset=a.id;count++;
+          if(addToTimeline){const id=this.editor.append(a.id,a.kind==='audio'?'audio':'primary',frame);this.select(id);}
+          if(a.kind==='audio')this.media.waveform(a).catch(()=>{});
+        }catch(e){failures.push(`${file.name}: ${e.message}`);}
+      }
+      this.collection='imported';this.browserTab='media';this.renderBrowser();this.updateLabels();
+      this.toast(`${count} media item${count===1?'':'s'} imported.${failures.length?' '+failures.join(' · '):' Double-click to append, or drag into the timeline.'}`);
+    }finally{this.importing=false;}
+  }
+  async relink(file){
+    const c=this.selectedClip();const id=this.relinkId||c?.assetId||this.selectedAsset;const old=this.editor.project.assets.find(a=>a.id===id);
+    if(!old){this.toast('Select an offline media item or a clip to relink.');return;}
+    try{
+      const fresh=await this.media.import(file);if(fresh.kind!==old.kind)throw new Error(`Choose a ${old.kind} file to match the original media.`);
+      this.editor.transact('Relink media',p=>{const i=p.assets.findIndex(a=>a.id===id);p.assets[i]={...fresh,id,name:old.name,favorite:old.favorite};});
+      await this.storage.put('media',id,file);const oldUrl=this.media.urls.get(id);if(oldUrl?.startsWith('blob:'))URL.revokeObjectURL(oldUrl);
+      this.media.urls.set(id,URL.createObjectURL(file));this.media.blobs.set(id,file);this.media.images.delete(id);this.media.missing.delete(id);
+      for(const [cid,e]of this.media.entries)if(e.assetId===id)this.media.release(cid,e);
+      if(fresh.kind==='image')await this.media.loadImage(id);this.media.assets.set(id,this.editor.project.assets.find(a=>a.id===id));this.updateAll();this.toast('Media relinked.');
+    }catch(e){this.toast('Relink failed: '+e.message);}finally{this.relinkId=null;}
+  }
+  addMedia(mode,assetId=this.selectedAsset){
+    this.pause();this.sourceMode=false;try{
+      let id;const range=this.rangeFor(assetId);
+      if(mode==='insert')id=this.editor.insert(assetId,this.frame,range);
+      else id=this.editor.append(assetId,mode==='connect'?'overlay':'primary',this.frame,range);

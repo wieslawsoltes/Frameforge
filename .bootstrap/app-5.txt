@@ -1,0 +1,82 @@
+      this.select(id);this.toast(mode==='connect'?'Connected clip added.':mode==='insert'?'Clip inserted into the storyline.':'Clip appended.');
+    }catch(e){this.toast(e.message);}
+  }
+  importCaptions(text){
+    const captions=parseSRT(text,this.editor.project.fps);
+    this.editor.transact('Import captions',p=>{for(const caption of captions){const c=makeClip({id:null,name:caption.text.split('\n')[0]||'Caption',kind:'image'},'title',caption.start,p.fps,caption.duration);c.title={style:'basic',text:caption.text,subtitle:'',size:48,color:'#ffffff',font:'Arial',align:'center'};c.fx.y=350;attach(p,c);p.clips.push(c);}});this.toast(`${captions.length} captions imported as editable title clips.`);
+  }
+  async action(action){
+    if(this.exporter?.running && !['shortcuts','about'].includes(action))return;
+    const selected=()=>[...this.selection];const p=this.editor.project;
+    switch(action){
+      case 'import':$('mediaInput').click();break;
+      case 'open':$('projectInput').click();break;
+      case 'new':this.pause();this.settings(true);break;
+      case 'settings':this.pause();this.settings();break;
+      case 'save':this.toast('Preparing a portable project, including imported media…');download(await portableProject(p,this.media),safeName(p.name)+'.frameforge');this.sessionUnsaved=false;this.toast('Portable project saved. Imported source files are embedded.');break;
+      case 'save-reference':download(new Blob([JSON.stringify(p,null,2)],{type:'application/json'}),safeName(p.name)+'.frameforge.json');this.toast('Reference project saved. Imported media remain in this browser; relink them when moving to another device.');break;
+      case 'undo':this.pause();this.editor.undo();break;
+      case 'redo':this.pause();this.editor.redo();break;
+      case 'play':await this.play();break;
+      case 'frame-back':case 'frame-forward':{const delta=action==='frame-back'?-1:1;if(this.sourceMode){this.pause();this.sourceFrame=clamp(this.sourceFrame+delta,0,(this.sourceClip()?.duration||1)-1);this.dirty=true;this.updateLabels();}else this.seek(this.frame+delta);break;}
+      case 'previous-edit':case 'next-edit':{const points=[0,...p.clips.filter(c=>c.lane==='primary').map(c=>c.start),duration(p)-1].sort((a,b)=>a-b);this.seek(action==='next-edit'?points.find(x=>x>this.frame)??duration(p)-1:points.filter(x=>x<this.frame).at(-1)??0);break;}
+      case 'append':case 'insert':case 'connect':this.addMedia(action);break;
+      case 'split':{this.pause();this.sourceMode=false;const ids=selected().length?selected():p.clips.filter(c=>this.frame>c.start&&this.frame<c.start+c.duration).map(c=>c.id);const added=this.editor.split(ids,this.frame);this.toast(added.length?`Split ${added.length} clip${added.length>1?'s':''} at ${timecode(this.frame,p.fps)}.`:'The playhead must be inside a selected clip.');break;}
+      case 'trim-start':case 'trim-end':{this.pause();const c=this.selectedClip();if(!c||this.frame<=c.start||this.frame>=c.start+c.duration)throw new Error('Move the playhead inside the selected clip.');this.editor.transact('Trim to playhead',p=>trimInPlace(p,c.id,action==='trim-start'?'left':'right',action==='trim-start'?this.frame-c.start:this.frame-c.start-c.duration));break;}
+      case 'duplicate':this.pause();this.selection=new Set(this.editor.duplicate(selected()));this.updateAll();break;
+      case 'delete':this.pause();this.editor.delete(selected());this.selection.clear();this.updateAll();break;
+      case 'enable':this.pause();this.editor.transact('Toggle clip visibility',p=>p.clips.forEach(c=>{if(this.selection.has(c.id))c.enabled=!c.enabled;}));break;
+      case 'detach':this.editor.transact('Detach connection',p=>p.clips.forEach(c=>{if(this.selection.has(c.id))delete c.anchor;}));this.toast('Selected connections detached. Clips now retain absolute timeline positions.');break;
+      case 'select-all':this.selection=new Set(p.clips.map(c=>c.id));this.updateAll();break;
+      case 'title':this.pause();this.select(this.editor.addTitle(this.frame,'basic','Your title'));break;
+      case 'marker':{const frame=Math.round(this.frame);this.dialog('Mark this moment.',`<div class="dialog-field"><label for="markerName">Marker name</label><input id="markerName" value="Marker ${p.markers.length+1}" maxlength="120"></div><p class="dialog-copy">At ${timecode(frame,p.fps)}. Markers appear in the timeline index; right-click an index marker to remove it.</p>`,[{label:'Cancel',action:()=>$('dialog').close()},{label:'Add marker',primary:true,action:()=>{this.editor.marker(frame,$('markerName').value||'Marker');$('dialog').close();}}]);$('markerName').focus();$('markerName').select();break;}
+      case 'favorite':if(this.selectedAsset)this.editor.transact('Toggle favorite',p=>{const a=p.assets.find(a=>a.id===this.selectedAsset);if(a)a.favorite=!a.favorite;});break;
+      case 'range-in':case 'range-out':{const a=p.assets.find(a=>a.id===this.selectedAsset);if(!a)throw new Error('Select a media item first.');const max=Math.max(1,Math.round(a.duration*p.fps)),range=this.ranges.get(a.id)||{in:0,out:max};if(action==='range-in')range.in=Math.min(this.sourceFrame,range.out-1);else range.out=Math.max(range.in+1,Math.min(max,this.sourceFrame+1));this.ranges.set(a.id,range);this.updateLabels();this.toast(`Source range: ${range.out-range.in} frames. Append, insert, or connect to use it.`);break;}
+      case 'range-clear':this.ranges.delete(this.selectedAsset);this.updateLabels();break;
+      case 'source-toggle':this.pause();this.sourceMode=!this.sourceMode;this.dirty=true;this.updateLabels();break;
+      case 'timeline':this.pause();this.sourceMode=false;this.dirty=true;this.updateLabels();break;
+      case 'browser':$('workspace').classList.toggle('hide-browser');document.querySelector('[data-action="browser"]').classList.toggle('active',!$('workspace').classList.contains('hide-browser'));this.fitViewer();break;
+      case 'inspector':$('workspace').classList.toggle('hide-inspector');document.querySelector('[data-action="inspector"]').classList.toggle('active',!$('workspace').classList.contains('hide-inspector'));this.fitViewer();break;
+      case 'effects':$('effectsPanel').hidden=!$('effectsPanel').hidden;$('effectsButton').classList.toggle('active',!$('effectsPanel').hidden);this.timeline.draw();break;
+      case 'index':$('timelineIndex').hidden=!$('timelineIndex').hidden;this.timeline.draw();break;
+      case 'grid':$('mediaGrid').classList.toggle('list-view');break;
+      case 'guides':this.guides=!this.guides;$('safeGuides').hidden=!this.guides;break;
+      case 'snapping':this.timeline.snapping=!this.timeline.snapping;$('snapButton').classList.toggle('active',this.timeline.snapping);break;
+      case 'magnetic':this.timeline.magnetic=!this.timeline.magnetic;$('magnetButton').classList.toggle('active',this.timeline.magnetic);this.updateLabels();this.toast(this.timeline.magnetic?'Magnetic storyline enabled.':'Position mode: dragging a storyline clip lifts it to a connected layer. The primary storyline stays gapless.');break;
+      case 'fit':this.timeline.fit();break;
+      case 'zoom-in':this.timeline.setZoom(this.timeline.pps*1.25);break;
+      case 'zoom-out':this.timeline.setZoom(this.timeline.pps/1.25);break;
+      case 'mute':this.media.setMute(!this.media.monitorMuted);$('muteButton').innerHTML=icon(this.media.monitorMuted?'mute':'volume',14);break;
+      case 'goto':this.dialog('Go to timecode',`<div class="dialog-field"><label for="gotoTime">HH:MM:SS:FF</label><input id="gotoTime" value="${timecode(this.frame,p.fps)}" aria-label="Go to timecode"></div>`,[{label:'Cancel',action:()=>$('dialog').close()},{label:'Go',primary:true,action:()=>{this.seek(parseTimecode($('gotoTime').value,p.fps));$('dialog').close();}}]);$('gotoTime').focus();$('gotoTime').select();break;
+      case 'fullscreen':if(document.fullscreenElement)await document.exitFullscreen();else await $('canvasHost').requestFullscreen();break;
+      case 'reset-layout':$('workspace').className='workspace';$('effectsPanel').hidden=true;$('timelineIndex').hidden=true;document.documentElement.style.removeProperty('--timeline-height');$('effectsButton').classList.remove('active');for(const name of ['browser','inspector'])document.querySelector(`[data-action="${name}"]`).classList.add('active');this.timeline.fit();break;
+      case 'dissolve':this.applyEffect('dissolve');break;
+      case 'export':this.exportDialog();break;
+      case 'snapshot':await this.exporter.framePNG();this.toast('Current composited frame saved as PNG.');break;
+      case 'export-srt':download(new Blob([exportSRT(p)],{type:'text/plain;charset=utf-8'}),safeName(p.name)+'.srt');this.toast('Editable titles exported as SRT captions.');break;
+      case 'export-edl':download(new Blob([exportEDL(p)],{type:'text/plain;charset=utf-8'}),safeName(p.name)+'.edl');this.toast('Primary storyline exported as a cuts-only CMX 3600 EDL. Effects, titles, and audio layers are not included.');break;
+      case 'import-srt':$('srtInput').click();break;
+      case 'relink':this.relinkId=this.sourceMode?this.selectedAsset:this.selectedClip()?.assetId||this.selectedAsset;$('relinkInput').click();break;
+      case 'shortcuts':this.shortcuts();break;
+      case 'about':this.dialog('Meet Frameforge.',`<div class="about-name"><img src="${assetURL('assets/icon.svg')}" alt=""><div><h3>Frameforge</h3><p>Your story. Every frame.</p></div></div><p class="about-features">A framework-free, local-first nonlinear video editor. A magnetic primary storyline, connected clips, real media playback, editable titles, keyframed effects, and an actual WebGPU compositor.</p><p class="dialog-copy">Demo: original rendered camera moves using NASA Earth Observatory’s Blue Marble texture, plus an original synthesized score. These are CGI camera moves, not spacecraft footage. No media is uploaded. Source code is MIT licensed; NASA image credits are included in THIRD_PARTY_NOTICES.md.</p><p class="dialog-copy">Version 1.0 · Independent project. Not affiliated with Apple, and not a complete implementation of Final Cut Pro.</p>`,[{label:'Back to the edit',primary:true,action:()=>$('dialog').close()}]);break;
+      case 'engine-info':this.dialog('Under the hood.',`<p class="about-features">Renderer: <strong>${esc(this.renderer.kind)}</strong><br>Frame-based edit kernel · 80-step command history<br>GPU video textures · Cached title textures<br>Worker min/max audio envelopes · Web Audio mix bus<br>IndexedDB source storage · Portable project files</p><p class="dialog-copy">GPU timings in the status bar measure CPU submission time, not GPU execution time. Playback decodes through browser media elements; source-frame delivery is not guaranteed for arbitrary VFR footage. Cross dissolves use source handles, or hold the outgoing final frame when handles are exhausted.</p><p class="dialog-copy">The pipeline is SDR; it is not a calibrated Rec.709/ACES/HDR mastering pipeline. Canvas fallback approximates color grading. Export is real-time MediaRecorder recording and may drop frames under load. There is no ProRes, RAW, optical flow, multicam, object tracking, plug-in host, or FCPXML import.</p>`,[{label:'Got it',primary:true,action:()=>$('dialog').close()}],'ENGINE CONTRACT');break;
+    }
+  }
+  keydown(e){
+    if(e.key==='Escape'){$('menuPopup').hidden=true;if(this.editor.gesture){this.editor.cancelGesture();this.inspectorEditing=false;this.timeline.cancelDrag();this.renderInspector();}return;}
+    if(e.target.closest('input,textarea,select,[contenteditable=true]')||$('dialog').open||this.exporter.running)return;
+    const key=e.key.toLowerCase(),mod=e.metaKey||e.ctrlKey;let action=null;
+    if(mod){action=({s:e.shiftKey?'save-reference':'save',o:'open',n:'new',i:'import',z:e.shiftKey?'redo':'undo',y:'redo',b:'split',d:'duplicate',t:'title',a:'select-all'})[key];}
+    else{
+      action=({' ':'play',arrowleft:'frame-back',arrowright:'frame-forward',arrowup:'previous-edit',arrowdown:'next-edit',delete:'delete',backspace:'delete',e:'append',w:'insert',q:'connect',i:'range-in',o:'range-out',v:'enable',n:'snapping',m:'marker',f:'favorite','?':'shortcuts','+':'zoom-in','=':'zoom-in','-':'zoom-out'})[key];
+      if(e.shiftKey&&key==='z')action='fit';
+      if(['a','b','h'].includes(key)){e.preventDefault();this.timeline.setTool({a:'select',b:'blade',h:'hand'}[key]);return;}
+      if(key==='home'){e.preventDefault();this.seek(0);return;}if(key==='end'){e.preventDefault();this.seek(duration(this.editor.project)-1);return;}
+      if(key==='k'){e.preventDefault();this.pause();return;}
+      if(key==='j'||key==='l'){e.preventDefault();const sign=key==='j'?-1:1;const rate=this.playing&&Math.sign(this.rate)===sign?sign*Math.min(4,Math.abs(this.rate)*2):sign;this.play(rate,true).catch(err=>this.toast(err.message));return;}
+    }
+    if(action){e.preventDefault();this.action(action).catch(err=>this.toast(err.message));}
+  }
+}
+const app=new App();window.frameforge=app;
+app.ready.catch(error=>{console.error(error);$('saveState').textContent='Initialization failed';$('toast').textContent='Could not start Frameforge: '+error.message;$('toast').classList.add('visible');});
