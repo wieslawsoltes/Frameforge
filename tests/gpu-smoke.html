@@ -1,0 +1,30 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Frameforge · GPU validation</title>
+<style>body{background:#19191d;color:#eee;font:14px system-ui;margin:30px}a{color:#bda5ef}#host{width:640px;max-width:100%}canvas{width:100%}pre{white-space:pre-wrap;line-height:1.7}.pass{color:#a5dfbf}.fail{color:#ffabb3}</style>
+<h1>Frameforge · WebGPU smoke test</h1><p>Run on localhost or HTTPS in a WebGPU-enabled browser. This test does not silently substitute the Canvas fallback.</p><div id="host"></div><pre id="log">Initializing…</pre><a href="../index.html">Open the editor</a>
+<script type="module">
+import {Compositor} from '../src/renderer.js';
+import {makeClip,evaluatedFX} from '../src/core.js';
+const log=document.querySelector('#log');const results=[];let compositor;
+function check(name,ok){results.push({name,ok});log.textContent=results.map(r=>`${r.ok?'PASS':'FAIL'}  ${r.name}`).join('\n');if(!ok)throw new Error(name);}
+try{
+ check('Secure context',isSecureContext);check('WebGPU API present',!!navigator.gpu);
+ compositor=new Compositor(document.querySelector('#host'));await compositor.init();
+ check('Both WGSL modules and asynchronous render pipelines compile',compositor.kind==='WebGPU');
+ compositor.resize(640,360);const errors=[];compositor.device.addEventListener('uncapturederror',e=>errors.push(e.error.message));
+ const image=color=>{const c=document.createElement('canvas');c.width=640;c.height=360;const g=c.getContext('2d');g.fillStyle=color;g.fillRect(0,0,640,360);return c;};
+ const red=image('#ff0000'),blue=image('#0000ff');
+ const a=makeClip({id:'a',kind:'image',name:'Red'},'primary',0,24,48),b=makeClip({id:'b',kind:'image',name:'Blue'},'overlay',0,24,48);b.fx.opacity=50;
+ const media={source:c=>c.assetId==='a'?red:blue};
+ const capture=layers=>new Promise(resolve=>requestAnimationFrame(()=>{compositor.render(layers,media);const c=document.createElement('canvas');c.width=640;c.height=360;const x=c.getContext('2d');x.drawImage(compositor.canvas,0,0);resolve(x.getImageData(320,180,1,1).data);}));
+ let pixel=await capture([{clip:a,frame:12,opacity:1},{clip:b,frame:12,opacity:1}]);
+ check('Distinct per-layer uniforms and source-over alpha blend',pixel[0]>80&&pixel[0]<180&&pixel[1]<20&&pixel[2]>80&&pixel[2]<180);
+ b.fx.cropL=75;pixel=await capture([{clip:a,frame:12,opacity:1},{clip:b,frame:12,opacity:1}]);
+ check('Crop discards pixels outside the visible rectangle',pixel[0]>230&&pixel[2]<25);
+ const video=document.createElement('video');video.muted=true;video.playsInline=true;video.preload='auto';
+ const loaded=new Promise((resolve,reject)=>{video.onloadeddata=resolve;video.onerror=()=>reject(new Error('Demo video failed to decode'));});video.src='../assets/orbit.mp4';await loaded;
+ const v=makeClip({id:'video',name:'External video',kind:'video',duration:6},'primary',0,24,144);media.source=()=>video;
+ pixel=await capture([{clip:v,frame:0,opacity:1}]);await compositor.settled();
+ check('HTMLVideoElement external texture produces a visible picture',pixel[0]+pixel[1]+pixel[2]>30);
+ check('No WebGPU validation errors',errors.length===0);log.className='pass';window.gpuTestResults=results;
+}catch(e){log.className='fail';log.textContent+='\n\n'+e.message;window.gpuTestError=e.message;}
+</script></html>

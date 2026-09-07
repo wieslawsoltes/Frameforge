@@ -1,0 +1,11 @@
+{
+  "checks": [
+    "GET index serves application HTML",
+    "Leading byte range",
+    "Suffix byte range",
+    "HEAD media metadata",
+    "Out of bounds range",
+    "Non-read method rejected"
+  ],
+  "passed": 6
+}

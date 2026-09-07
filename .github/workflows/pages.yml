@@ -1,53 +1,41 @@
 name: Deploy GitHub Pages
-
 on:
   push:
     branches: [main]
   workflow_dispatch:
-
 permissions:
   contents: read
-
 concurrency:
   group: github-pages
   cancel-in-progress: false
-
 jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    outputs:
-      ready: ${{ steps.source.outputs.ready }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v6
+      - uses: actions/checkout@v6
         with:
           persist-credentials: false
-      - name: Check source availability
-        id: source
-        shell: bash
-        run: |
-          if [[ -f src/app.js && -f src/media.js && -f index.html && -f assets/weightless.wav ]]; then
-            echo "ready=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "ready=false" >> "$GITHUB_OUTPUT"
-            echo "::warning::Full application source has not been imported. Deployment is skipped."
-            echo "Application source import is incomplete. No site was deployed." >> "$GITHUB_STEP_SUMMARY"
-          fi
-      - name: Setup Node.js
-        if: steps.source.outputs.ready == 'true'
-        uses: actions/setup-node@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: '22'
           package-manager-cache: false
+      - name: Verify source and bundled media integrity
+        run: |
+          node --input-type=module <<'JS'
+          import fs from 'node:fs';
+          import assert from 'node:assert/strict';
+          import {createHash} from 'node:crypto';
+          const manifest=JSON.parse(fs.readFileSync('SOURCE_SHA256.json','utf8'));
+          for(const [path,expected] of Object.entries(manifest)) assert.equal(createHash('sha256').update(fs.readFileSync(path)).digest('hex'),expected,path);
+          for(const path of ['src/app.js','styles.css','assets/weightless.wav','tests/gpu-smoke.html']) assert.ok(fs.existsSync(path),path);
+          console.log('Source and generated-media integrity checks passed.');
+          JS
       - name: Validate edit kernel
-        if: steps.source.outputs.ready == 'true'
         run: npm test
       - name: Build standalone distribution
-        if: steps.source.outputs.ready == 'true'
         run: npm run build
       - name: Assemble public site
-        if: steps.source.outputs.ready == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -59,13 +47,10 @@ jobs:
           touch _site/.nojekyll
           printf '{"commit":"%s","run":"%s"}\n' "$GITHUB_SHA" "$GITHUB_RUN_ID" > _site/build-info.json
       - name: Upload Pages artifact
-        if: steps.source.outputs.ready == 'true'
         uses: actions/upload-pages-artifact@v4
         with:
           path: _site
-
   deploy:
-    if: needs.build.outputs.ready == 'true'
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -75,7 +60,38 @@ jobs:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
+    outputs:
+      page_url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      - name: Read Pages configuration
+        uses: actions/configure-pages@v5
       - name: Deploy Pages artifact
         id: deployment
         uses: actions/deploy-pages@v4
+  verify:
+    needs: deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      FRAMEFORGE_BASE_URL: ${{ needs.deploy.outputs.page_url }}
+      EXPECTED_COMMIT: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Install browser verification tools
+        run: |
+          python -m pip install playwright
+          python -m playwright install --with-deps chromium
+      - name: Verify published editor, playback, editing and persistence
+        run: python tests/pages-smoke.py
+      - name: Upload hosted-browser verification report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: published-browser-verification
+          path: test-output/
+          if-no-files-found: warn

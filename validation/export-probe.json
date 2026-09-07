@@ -1,0 +1,27 @@
+{
+    "programs": [
+
+    ],
+    "stream_groups": [
+
+    ],
+    "streams": [
+        {
+            "codec_name": "vp8",
+            "codec_type": "video",
+            "width": 640,
+            "height": 360,
+            "nb_read_frames": "74"
+        },
+        {
+            "codec_name": "opus",
+            "codec_type": "audio",
+            "sample_rate": "48000",
+            "channels": 2,
+            "nb_read_frames": "51"
+        }
+    ],
+    "format": {
+        "size": "819245"
+    }
+}

@@ -1,0 +1,23 @@
+{
+  "browser": "144.0.7559.96",
+  "renderer": "Canvas 2D",
+  "checks": [
+    "Demo boots with 7 clips and loaded video",
+    "Opaque-origin Canvas fallback accurately reported",
+    "Playback advances with nonzero mixed audio",
+    "Space pauses playback",
+    "Keyboard blade creates a real primary split",
+    "Keyboard undo restores exact duration",
+    "Color look changes clip grading data",
+    "Title inspector edits composited title data",
+    "Local image import retains blob and metadata",
+    "Imported still appends as an editable clip",
+    "Real-time MediaRecorder export completes",
+    "Export restores playhead and preview resolution",
+    "Cancel releases export and pauses playback",
+    "No script or console errors"
+  ],
+  "errors": [],
+  "webgpuHardwareTested": false,
+  "exportBytes": 819245
+}
