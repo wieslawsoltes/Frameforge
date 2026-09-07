@@ -1,0 +1,266 @@
+
+> frameforge@1.0.0 test
+> node --test tests/core.test.mjs
+
+TAP version 13
+# Subtest: demo validates; four source-backed primary clips make a 24-second project
+ok 1 - demo validates; four source-backed primary clips make a 24-second project
+  ---
+  duration_ms: 4.533108
+  type: 'test'
+  ...
+# Subtest: timecode round-trips at each supported non-drop frame rate
+ok 2 - timecode round-trips at each supported non-drop frame rate
+  ---
+  duration_ms: 0.420252
+  type: 'test'
+  ...
+# Subtest: timecode rejects invalid fields
+ok 3 - timecode rejects invalid fields
+  ---
+  duration_ms: 0.357806
+  type: 'test'
+  ...
+# Subtest: editor snapshots do not mutate supplied project objects
+ok 4 - editor snapshots do not mutate supplied project objects
+  ---
+  duration_ms: 0.998348
+  type: 'test'
+  ...
+# Subtest: transaction rollback restores state and does not add history
+ok 5 - transaction rollback restores state and does not add history
+  ---
+  duration_ms: 1.482249
+  type: 'test'
+  ...
+# Subtest: no-op transaction does not create undo entry
+ok 6 - no-op transaction does not create undo entry
+  ---
+  duration_ms: 0.509478
+  type: 'test'
+  ...
+# Subtest: undo / redo round-trip structural edits and invalidate redo on a new edit
+ok 7 - undo / redo round-trip structural edits and invalidate redo on a new edit
+  ---
+  duration_ms: 1.504189
+  type: 'test'
+  ...
+# Subtest: magnetic reorder retains connected titles with their source parent
+ok 8 - magnetic reorder retains connected titles with their source parent
+  ---
+  duration_ms: 1.175508
+  type: 'test'
+  ...
+# Subtest: ripple delete closes primary gap and removes parent-connected clips
+ok 9 - ripple delete closes primary gap and removes parent-connected clips
+  ---
+  duration_ms: 0.81136
+  type: 'test'
+  ...
+# Subtest: blade preserves continuous source time under retiming
+ok 10 - blade preserves continuous source time under retiming
+  ---
+  duration_ms: 1.013045
+  type: 'test'
+  ...
+# Subtest: blade at either boundary is a no-op
+ok 11 - blade at either boundary is a no-op
+  ---
+  duration_ms: 0.625925
+  type: 'test'
+  ...
+# Subtest: blade reanchors children positioned after the cut
+ok 12 - blade reanchors children positioned after the cut
+  ---
+  duration_ms: 0.833792
+  type: 'test'
+  ...
+# Subtest: insert within primary splits the hit clip and ripples the remaining sequence
+ok 13 - insert within primary splits the hit clip and ripples the remaining sequence
+  ---
+  duration_ms: 0.674265
+  type: 'test'
+  ...
+# Subtest: append honors source range
+ok 14 - append honors source range
+  ---
+  duration_ms: 0.815097
+  type: 'test'
+  ...
+# Subtest: audio append routes to connected audio lane
+ok 15 - audio append routes to connected audio lane
+  ---
+  duration_ms: 0.692629
+  type: 'test'
+  ...
+# Subtest: right trim is constrained by source handles
+ok 16 - right trim is constrained by source handles
+  ---
+  duration_ms: 0.843771
+  type: 'test'
+  ...
+# Subtest: left trim advances source in-point and ripples primary start positions
+ok 17 - left trim advances source in-point and ripples primary start positions
+  ---
+  duration_ms: 0.679375
+  type: 'test'
+  ...
+# Subtest: duplicate inserts after primary and leaves original metadata independent
+ok 18 - duplicate inserts after primary and leaves original metadata independent
+  ---
+  duration_ms: 0.750647
+  type: 'test'
+  ...
+# Subtest: gestures coalesce successive previews to one undo step
+ok 19 - gestures coalesce successive previews to one undo step
+  ---
+  duration_ms: 3.469939
+  type: 'test'
+  ...
+# Subtest: invalid gesture rolls back; cancelled gesture creates no history
+ok 20 - invalid gesture rolls back; cancelled gesture creates no history
+  ---
+  duration_ms: 0.786284
+  type: 'test'
+  ...
+# Subtest: history retains a bounded number of snapshots
+ok 21 - history retains a bounded number of snapshots
+  ---
+  duration_ms: 36.974302
+  type: 'test'
+  ...
+# Subtest: linear and smooth keyframes clamp endpoints
+ok 22 - linear and smooth keyframes clamp endpoints
+  ---
+  duration_ms: 0.375088
+  type: 'test'
+  ...
+# Subtest: keyframes survive blade with value continuity
+ok 23 - keyframes survive blade with value continuity
+  ---
+  duration_ms: 1.444158
+  type: 'test'
+  ...
+# Subtest: snap chooses nearby edit/marker and respects tolerance
+ok 24 - snap chooses nearby edit/marker and respects tolerance
+  ---
+  duration_ms: 0.20925
+  type: 'test'
+  ...
+# Subtest: render plan layers primary then connected overlay then titles
+ok 25 - render plan layers primary then connected overlay then titles
+  ---
+  duration_ms: 0.501172
+  type: 'test'
+  ...
+# Subtest: dissolve uses two actual layers and source time bounded at exhausted handles
+ok 26 - dissolve uses two actual layers and source time bounded at exhausted handles
+  ---
+  duration_ms: 0.265344
+  type: 'test'
+  ...
+# Subtest: clip activity is half-open and disabled clips do not render
+ok 27 - clip activity is half-open and disabled clips do not render
+  ---
+  duration_ms: 0.282667
+  type: 'test'
+  ...
+# Subtest: project validator rejects hostile paths and malformed IDs, sources, FX and anchors
+ok 28 - project validator rejects hostile paths and malformed IDs, sources, FX and anchors
+  ---
+  duration_ms: 1.028244
+  type: 'test'
+  ...
+# Subtest: SRT export and import preserve project caption boundaries and text
+ok 29 - SRT export and import preserve project caption boundaries and text
+  ---
+  duration_ms: 0.643948
+  type: 'test'
+  ...
+# Subtest: SRT parser supports BOM, CRLF, period decimals and strips formatting markup
+ok 30 - SRT parser supports BOM, CRLF, period decimals and strips formatting markup
+  ---
+  duration_ms: 0.234236
+  type: 'test'
+  ...
+# Subtest: cuts-only EDL includes non-drop timeline and source timing
+ok 31 - cuts-only EDL includes non-drop timeline and source timing
+  ---
+  duration_ms: 0.471518
+  type: 'test'
+  ...
+# Subtest: no MediaRecorder returns zero codecs without throwing
+ok 32 - no MediaRecorder returns zero codecs without throwing
+  ---
+  duration_ms: 0.174896
+  type: 'test'
+  ...
+# Subtest: session storage fallback retains blobs and serialized project saves
+ok 33 - session storage fallback retains blobs and serialized project saves
+  ---
+  duration_ms: 0.718528
+  type: 'test'
+  ...
+# Subtest: portable JSON reader validates project and extracts embedded local media
+ok 34 - portable JSON reader validates project and extracts embedded local media
+  ---
+  duration_ms: 2.465169
+  type: 'test'
+  ...
+# Subtest: portable JSON reader rejects invalid payload MIME
+ok 35 - portable JSON reader rejects invalid payload MIME
+  ---
+  duration_ms: 0.582243
+  type: 'test'
+  ...
+# Subtest: filenames remove separators and support Unicode
+ok 36 - filenames remove separators and support Unicode
+  ---
+  duration_ms: 1.045396
+  type: 'test'
+  ...
+# Subtest: 500 deterministic randomized edits preserve edit invariants with undo / redo
+ok 37 - 500 deterministic randomized edits preserve edit invariants with undo / redo
+  ---
+  duration_ms: 89.453231
+  type: 'test'
+  ...
+# Subtest: left trim samples the curve at the cut and removes duplicate keyframes
+ok 38 - left trim samples the curve at the cut and removes duplicate keyframes
+  ---
+  duration_ms: 0.809487
+  type: 'test'
+  ...
+# Subtest: validator rejects unsorted and duplicate keyframe positions
+ok 39 - validator rejects unsorted and duplicate keyframe positions
+  ---
+  duration_ms: 1.22472
+  type: 'test'
+  ...
+# Subtest: gesture history is bounded independently of ordinary transactions
+ok 40 - gesture history is bounded independently of ordinary transactions
+  ---
+  duration_ms: 19.756978
+  type: 'test'
+  ...
+# Subtest: render plan carries its actual program frame through a dissolve
+ok 41 - render plan carries its actual program frame through a dissolve
+  ---
+  duration_ms: 0.266476
+  type: 'test'
+  ...
+# Subtest: validator rejects malformed fades and transition attributes
+ok 42 - validator rejects malformed fades and transition attributes
+  ---
+  duration_ms: 0.855482
+  type: 'test'
+  ...
+1..42
+# tests 42
+# suites 0
+# pass 42
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 291.838664
